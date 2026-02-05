@@ -24,13 +24,13 @@ class BaseGARCH(ABC):
     -> residual series
     std_residuals : np.ndarray | None
     -> standardised residuals (epsilon/sigma)
-    log_likelihood : float | None
+    ll : float | None
     -> log-likelihood at optimal parameters
     _fitted : bool
     -> represents if the model has been fitted or not
     '''
 
-    def __init__(self, returns):
+    def __init__(self, returns: NDArray[np.float64]):
         '''
         Initialise GARCH model
 
@@ -45,7 +45,7 @@ class BaseGARCH(ABC):
         self.sigma2: NDArray[np.float64] | None = None
         self.epsilon: NDArray[np.float64] | None = None
         self.std_residuals: NDArray[np.float64] | None = None
-        self.log_likelihood: float | None = None
+        self.ll: float | None = None # log likelihood
         self._fitted: bool = False
 
     @abstractmethod
@@ -81,7 +81,7 @@ class BaseGARCH(ABC):
         '''
 
     @abstractmethod
-    def _compute_variance_recursion(self, params, epsilon, sigma2) -> NDArray[np.float64]:
+    def _compute_variance_recursion(self, params: NDArray[np.float64], epsilon: NDArray[np.float64], sigma2: NDArray[np.float64]) -> NDArray[np.float64]:
         '''
         Computes conditional variance using model-specific recursion
 
@@ -100,7 +100,7 @@ class BaseGARCH(ABC):
         pass
 
     @abstractmethod
-    def forecast(self, horizon=1) -> NDArray[np.float64]:
+    def forecast(self, horizon: int=1) -> NDArray[np.float64] | float:
         '''
         Forecasts variance for future periods (horizon as the no. of periods)
 
@@ -109,22 +109,22 @@ class BaseGARCH(ABC):
         -> number of periods to forecast
 
         Returns:
-        forecasts : np.ndarray
-        -> array of variance forecasts
+        forecasts : np.ndarray | float
+        -> array of variance forecasts or float value for one-step-ahead forecast if horizon is 1
         '''
         pass
 
-    def _log_likelihood(self, params) -> float:
+    def _negative_log_likelihood(self, params: NDArray[np.float64]) -> float:
         '''
-        Computes the log-likelihood
+        Computes the negative log-likelihood
 
         Parameters:
         params : np.ndarray
         -> mean and model-specific parameters
 
         Returns:
-        ll : float
-        -> log-likelihood value
+        nll : float
+        -> negative log-likelihood value
         '''
 
         mu: float = params[0]
@@ -139,9 +139,9 @@ class BaseGARCH(ABC):
         if not np.all(sigma2 > 0): raise ValueError('require all variances to be positive')
         
         # applying log-likelihood formula
-        ll: float = -0.5 * np.sum(np.log(2 * np.pi) + np.log(sigma2) - (epsilon ** 2 / sigma2))
+        nll: float = 0.5 * np.sum(np.log(2 * np.pi) - np.log(sigma2) - (epsilon ** 2 / sigma2))
 
-        return ll
+        return nll
     
     def _compute_conditional_variance(self) -> NDArray[np.float64]:
         '''
@@ -166,27 +166,28 @@ class BaseGARCH(ABC):
 
         return conditional_var
     
-    def fit(self, initial_params=get_initial_params(), method='SLSQP', options={'maxiter': 1000}):
+    def fit(self, initial_params: NDArray[np.float64]=None, method: str='SLSQP', options: dict={'maxiter': 1000}):
         '''
         Estimates model parameters using maximum likelihood estimation (MLE)
 
         Parameters:
-        initial_params : np.ndarray | None
+        initial_params : np.ndarray
         -> initial parameter values (defaults available if none given)
         method : str - default SLSQP
         -> optimisation method for scipy.optimize.minimize
-        options : dict | None
+        options : dict
         -> additional options
         '''
 
         constraints: tuple[dict] = self.get_constraints()
+        initial_params = self.get_initial_params()
 
-        res = minimize(-self.log_likelihood, initial_params, method=method, constraints=constraints, options=options)
+        res = minimize(self._negative_log_likelihood, initial_params, method=method, constraints=constraints, options=options)
 
         if not res.success: raise RuntimeError(f'optimisation did not converge. message: {res.message}')
 
         self.params = res.x # solution array
-        self.log_likelihood = res.fun
+        self.ll = -res.fun
         self.sigma2 = self._compute_conditional_variance()
         self._fitted = True
 
@@ -206,12 +207,12 @@ class BaseGARCH(ABC):
         for n, v in zip(param_names, self.params):
             print(f'{n:25s}: {v:.6e}' if abs(v) < 0.01 else f'{n:25s}: {v:.6f}')
         
-        print(f'{'Log-likelihood':25s}: {self.log_likelihood:.2f}')
+        print(f'{'Log-likelihood':25s}: {self.ll:.2f}')
 
         # info criteria AIC/BIC
         k = len(self.params)
-        aic = -2 * self.log_likelihood + 2*k
-        bic = -2 * self.log_likelihood + k*np.log(self.T)
+        aic = -2 * self.ll + 2*k
+        bic = -2 * self.ll + k*np.log(self.T)
 
         print(f'Information criteria:\n{'AIC':25s}: {aic:.2f}\n{'BIC':25s}: {bic:.2f}\n{'='*60}')
         
