@@ -139,9 +139,9 @@ class BaseGARCH(ABC):
         if not np.all(sigma2 > 0): raise ValueError('require all variances to be positive')
         
         # applying log-likelihood formula
-        log_likelihood: float = -0.5 * np.sum(np.log(2 * np.pi) + np.log(sigma2) - (epsilon ** 2 / sigma2))
+        ll: float = -0.5 * np.sum(np.log(2 * np.pi) + np.log(sigma2) - (epsilon ** 2 / sigma2))
 
-        return log_likelihood
+        return ll
     
     def _compute_conditional_variance(self) -> NDArray[np.float64]:
         '''
