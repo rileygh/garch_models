@@ -32,7 +32,7 @@ def main():
         print(f'10-step forecast:\n')
         print(forecast)
 
-    fig, axes = plt.subplots(2, 1, figsize=(12, 8))
+    _, axes = plt.subplots(2, 1, figsize=(12, 8))
     
     axes[0].plot(returns, alpha=0.5, label='Returns')
     axes[0].set_title('Simulated Returns')

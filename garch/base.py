@@ -123,7 +123,7 @@ class BaseGARCH(ABC):
         -> mean and model-specific parameters
 
         Returns:
-        nll : float
+        -ll : float
         -> negative log-likelihood value
         '''
 
@@ -136,12 +136,14 @@ class BaseGARCH(ABC):
         # populate sigma2 with model-specific formula for conditional variance
         sigma2 = self._compute_variance_recursion(model_params, epsilon, sigma2)
 
-        if not np.all(sigma2 > 0): raise ValueError('require all variances to be positive')
+        # handle negative or zero variances by returning large penalty
+        if not np.all(sigma2 > 0):
+            return 1e10
         
-        # applying log-likelihood formula
-        nll: float = 0.5 * np.sum(np.log(2 * np.pi) - np.log(sigma2) - (epsilon ** 2 / sigma2))
+        # apply log-likelihood formula
+        ll: float = -0.5 * np.sum(np.log(2 * np.pi) + np.log(sigma2) + (epsilon ** 2 / sigma2))
 
-        return nll
+        return -ll
     
     def _compute_conditional_variance(self) -> NDArray[np.float64]:
         '''
@@ -166,14 +168,14 @@ class BaseGARCH(ABC):
 
         return conditional_var
     
-    def fit(self, initial_params: NDArray[np.float64]=None, method: str='SLSQP', options: dict={'maxiter': 1000}):
+    def fit(self, initial_params: NDArray[np.float64]=None, method: str='L-BFGS-B', options: dict={'maxiter': 1000}):
         '''
         Estimates model parameters using maximum likelihood estimation (MLE)
 
         Parameters:
         initial_params : np.ndarray
         -> initial parameter values (defaults available if none given)
-        method : str - default SLSQP
+        method : str - default L-BFGS-B
         -> optimisation method for scipy.optimize.minimize
         options : dict
         -> additional options
@@ -181,8 +183,10 @@ class BaseGARCH(ABC):
 
         constraints: tuple[dict] = self.get_constraints()
         initial_params = self.get_initial_params()
+        bounds = self.get_bounds() if hasattr(self, 'get_bounds') else None
 
-        res = minimize(self._negative_log_likelihood, initial_params, method=method, constraints=constraints, options=options)
+        res = minimize(self._negative_log_likelihood, initial_params, method=method, 
+                      bounds=bounds, constraints=constraints, options=options)
 
         if not res.success: raise RuntimeError(f'optimisation did not converge. message: {res.message}')
 
@@ -211,8 +215,7 @@ class BaseGARCH(ABC):
 
         # info criteria AIC/BIC
         k = len(self.params)
-        aic = -2 * self.ll + 2*k
+        aic = -2 * self.ll + k*2
         bic = -2 * self.ll + k*np.log(self.T)
 
         print(f'Information criteria:\n{'AIC':25s}: {aic:.2f}\n{'BIC':25s}: {bic:.2f}\n{'='*60}')
-        
